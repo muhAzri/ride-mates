@@ -13,11 +13,17 @@ import type { LoginUseCase } from '../application/login.usecase';
 import type { GoogleLoginUseCase } from '../application/google-login.usecase';
 import type { RefreshSessionUseCase } from '../application/refresh-session.usecase';
 import type { LogoutUseCase } from '../application/logout.usecase';
+import type { ForgotPasswordUseCase } from '../application/forgot-password.usecase';
+import type { ResetPasswordUseCase } from '../application/reset-password.usecase';
+import type { ChangePasswordUseCase } from '../application/change-password.usecase';
 import {
+  changePasswordSchema,
+  forgotPasswordSchema,
   googleSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
+  resetPasswordSchema,
 } from './auth.schemas';
 import { toAuthResponse, toTokensResponse } from './auth.mapper';
 
@@ -27,6 +33,9 @@ export interface AuthUseCases {
   google: GoogleLoginUseCase;
   refresh: RefreshSessionUseCase;
   logout: LogoutUseCase;
+  forgotPassword: ForgotPasswordUseCase;
+  resetPassword: ResetPasswordUseCase;
+  changePassword: ChangePasswordUseCase;
 }
 
 export class AuthController {
@@ -68,5 +77,33 @@ export class AuthController {
     }
     await this.useCases.logout.execute(accessToken);
     return noContent();
+  }
+
+  /** POST /auth/password/forgot (public, UA-5). Always 202 — no enumeration. */
+  async forgotPassword(request: NextRequest): Promise<NextResponse> {
+    const body = parseInput(forgotPasswordSchema, await readJsonBody(request));
+    await this.useCases.forgotPassword.execute(body.email);
+    return json(
+      { message: 'If an account exists for that email, a reset link has been sent.' },
+      202,
+    );
+  }
+
+  /** POST /auth/password/reset (public reset token, UA-5). */
+  async resetPassword(request: NextRequest): Promise<NextResponse> {
+    const body = parseInput(resetPasswordSchema, await readJsonBody(request));
+    await this.useCases.resetPassword.execute(body);
+    return json({ message: 'Your password has been reset.' }, 200);
+  }
+
+  /** POST /auth/password/change (auth required, UA-5). */
+  async changePassword(request: NextRequest): Promise<NextResponse> {
+    const accessToken = getBearerToken(request);
+    if (!accessToken) {
+      throw ApiError.unauthenticated('A bearer access token is required.');
+    }
+    const body = parseInput(changePasswordSchema, await readJsonBody(request));
+    await this.useCases.changePassword.execute({ accessToken, ...body });
+    return json({ message: 'Your password has been changed.' }, 200);
   }
 }

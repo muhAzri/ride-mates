@@ -30,7 +30,27 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'refreshToken is required.'),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.email('A valid email is required.'),
+});
+
+export const resetPasswordSchema = z.object({
+  email: z.email('A valid email is required.'),
+  // The 6-digit recovery code from the reset email.
+  token: z.string().min(1, 'token is required.'),
+  // Shape only: strength (≥8, not all-numeric → 422) is PasswordPolicy's job.
+  newPassword: z.string().min(1, 'newPassword is required.'),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'currentPassword is required.'),
+  newPassword: z.string().min(1, 'newPassword is required.'),
+});
+
 export type RegisterBody = z.infer<typeof registerSchema>;
 export type LoginBody = z.infer<typeof loginSchema>;
 export type GoogleBody = z.infer<typeof googleSchema>;
 export type RefreshBody = z.infer<typeof refreshSchema>;
+export type ForgotPasswordBody = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordBody = z.infer<typeof resetPasswordSchema>;
+export type ChangePasswordBody = z.infer<typeof changePasswordSchema>;
