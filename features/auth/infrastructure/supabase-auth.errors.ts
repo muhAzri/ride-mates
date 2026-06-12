@@ -13,18 +13,29 @@ function codeOf(error: AuthError): string {
   return (error.code ?? '').toLowerCase();
 }
 
+/** GoTrue throttle messages embed the wait, e.g. "…after 11 seconds." */
+function parseRetryAfterSeconds(message: string): number | undefined {
+  const match = message.match(/after (\d+)\s*second/i);
+  return match ? Number(match[1]) : undefined;
+}
+
 export function mapAuthError(error: AuthError, flow: AuthFlow): ApiError {
   const code = codeOf(error);
   const message = error.message.toLowerCase();
 
-  // Throttled by GoTrue (e.g. confirmation-email send limit) → 429 RATE_LIMITED.
+  // Throttled by GoTrue (e.g. confirmation-email send limit, repeated requests)
+  // → 429 RATE_LIMITED, with Retry-After parsed from the message when present.
+  // The raw provider text is never forwarded — only a clean, user-safe message.
   if (
     error.status === 429 ||
     code === 'over_email_send_rate_limit' ||
     code === 'over_request_rate_limit' ||
-    message.includes('rate limit')
+    message.includes('rate limit') ||
+    message.includes('you can only request this after')
   ) {
-    return ApiError.rateLimited(error.message);
+    const retryAfter = parseRetryAfterSeconds(error.message);
+    const wait = retryAfter ? ` Please try again in ${retryAfter} seconds.` : ' Please try again in a moment.';
+    return ApiError.rateLimited(`Too many requests.${wait}`, retryAfter);
   }
 
   // Duplicate email on register → 409 CONFLICT (UA-1 acceptance).
@@ -77,9 +88,11 @@ export function mapAuthError(error: AuthError, flow: AuthFlow): ApiError {
     return ApiError.unauthenticated('Refresh token is invalid or expired.');
   }
 
-  // Anything else: surface 401 for 4xx auth failures, else a generic 500.
+  // Anything else: never forward the provider's raw text. Log it for ops, return
+  // a clean message — 401 for 4xx auth failures, generic 500 otherwise.
+  console.error(`[auth] unmapped auth error (flow=${flow})`, error);
   if (error.status && error.status >= 400 && error.status < 500) {
-    return ApiError.unauthenticated(error.message);
+    return ApiError.unauthenticated('We could not verify your request. Please try again.');
   }
-  return ApiError.internal('Authentication provider error.');
+  return ApiError.internal();
 }

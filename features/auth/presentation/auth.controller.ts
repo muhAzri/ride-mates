@@ -73,7 +73,7 @@ export class AuthController {
   async logout(request: NextRequest): Promise<NextResponse> {
     const accessToken = getBearerToken(request);
     if (!accessToken) {
-      throw ApiError.unauthenticated('A bearer access token is required.');
+      throw ApiError.unauthenticated('You must be signed in to continue.');
     }
     await this.useCases.logout.execute(accessToken);
     return noContent();
@@ -84,7 +84,7 @@ export class AuthController {
     const body = parseInput(forgotPasswordSchema, await readJsonBody(request));
     await this.useCases.forgotPassword.execute(body.email);
     return json(
-      { message: 'If an account exists for that email, a reset link has been sent.' },
+      { message: 'If an account exists for that email, a reset code has been sent.' },
       202,
     );
   }
@@ -100,7 +100,7 @@ export class AuthController {
   async changePassword(request: NextRequest): Promise<NextResponse> {
     const accessToken = getBearerToken(request);
     if (!accessToken) {
-      throw ApiError.unauthenticated('A bearer access token is required.');
+      throw ApiError.unauthenticated('You must be signed in to continue.');
     }
     const body = parseInput(changePasswordSchema, await readJsonBody(request));
     await this.useCases.changePassword.execute({ accessToken, ...body });
