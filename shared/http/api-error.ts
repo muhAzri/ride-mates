@@ -59,6 +59,10 @@ export class ApiError extends Error {
     return new ApiError('FORBIDDEN', message);
   }
 
+  static notFound(message = 'The requested resource was not found.'): ApiError {
+    return new ApiError('NOT_FOUND', message);
+  }
+
   static conflict(message: string, fields?: FieldErrors): ApiError {
     return new ApiError('CONFLICT', message, fields);
   }
