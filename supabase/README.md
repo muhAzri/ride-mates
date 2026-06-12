@@ -13,6 +13,7 @@ migrations.
 | `…090000_init_extensions_and_enums.sql` | Extensions, all enum types, `set_updated_at()` | §17 enums |
 | `…090100_profiles_and_auth.sql` | `profiles` (+`role`), `user_settings`, `user_locations`, `is_admin()`, signup trigger, role guard, `set_my_location()` | UA-1..6, §5, §14, LP-1 |
 | `…090200_marketplace.sql` | `listings`, `listing_photos`, `listing_locations`, `saved_listings`, `nearby_listings()` | MP-1..12, §6, §7 |
+| `…091000_marketplace_listing_rpcs.sql` | `create_listing()` (photos as `jsonb`), `listing_detail()`, `saved_listings_feed()` | MP-1..8, §6, §7, R12 |
 | `…090300_forum.sql` | `threads`, `comments`, `thread_upvotes`, `thread_bookmarks` | CF-1..5, §8, §9 |
 | `…090400_messaging.sql` | `conversations`, `messages`, `conversation_reads`, `get_or_create_conversation()`, `my_conversations()` | MS-1..4, MP-6, §10 |
 | `…090500_moderation.sql` | `reports`, `blocks`, `resolve_report()` | MD-1..5, §12, §15 |
@@ -98,6 +99,13 @@ The upload path lives in the web/backend app, not in these migrations:
   the URL is otherwise stable, the API appends a cache-busting `?v=<ts>` token
   (stored in `profiles.avatar_url`) so CDNs/clients pick up the new image.
   `DELETE /users/me/avatar` removes the object and sets `avatar_url = null`.
+- **Listing photos upload inline (R12 / §6).** `POST`/`PATCH /listings` are
+  `multipart/form-data`: the route handler stores each `photos` file under
+  `listings/{userId}/{uuid}` (public-read) and passes the resulting URLs to
+  `create_listing` (as `jsonb`), which inserts `listing_photos` rows atomically
+  with the listing. Edits reconcile photos with owner-scoped delete/insert and
+  remove the dropped objects from the bucket — so there is no staging table and
+  no orphaned media. Max **3** photos per listing.
 
 ## RLS summary
 
@@ -121,6 +129,9 @@ Every table has RLS enabled. The recurring patterns:
 |----------|---------|----------|
 | `set_my_location(lat, lng, display_area, area_level)` | Set/move pin; stores precise coords server-side | `PUT /users/me/location` |
 | `nearby_listings(q, category, condition, min, max, radius_km, explore_beyond, sort, status, limit, offset)` | Browse/search with proximity | `GET /listings` |
+| `create_listing(title, description, price_idr, category, condition, photos jsonb)` | Insert a listing + its photos (1–3) atomically | `POST /listings` |
+| `listing_detail(id)` | One listing: distance, photos, seller mini, saved-state | `GET /listings/{id}` |
+| `saved_listings_feed(limit, offset)` | Wishlist as ListingCards + total count | `GET /me/saved/listings` |
 | `get_or_create_conversation(other_user, listing_ref)` | Idempotent 1:1 conversation | `POST /conversations` |
 | `my_conversations(limit, offset)` | Conversation list + unread counts | `GET /conversations` |
 | `mark_conversation_read(conversation_id)` | Clear unread | `POST /conversations/{id}/read` |
