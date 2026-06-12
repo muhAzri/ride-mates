@@ -6,7 +6,7 @@
 import type { AuthError } from '@supabase/supabase-js';
 import { ApiError } from '@/shared/http/api-error';
 
-type AuthFlow = 'register' | 'login' | 'social' | 'refresh';
+type AuthFlow = 'register' | 'login' | 'social' | 'refresh' | 'reset' | 'change';
 
 function codeOf(error: AuthError): string {
   // `code` is the stable GoTrue error code; fall back to message matching.
@@ -40,11 +40,23 @@ export function mapAuthError(error: AuthError, flow: AuthFlow): ApiError {
     });
   }
 
+  // New password must differ from the old one → 422 UNPROCESSABLE (UA-5).
+  if (code === 'same_password' || message.includes('should be different')) {
+    return ApiError.unprocessable('New password must be different from the current one.', {
+      newPassword: 'Choose a password you have not used before.',
+    });
+  }
+
   // Server-side weak password → 422 UNPROCESSABLE (defensive; we also pre-check).
   if (code === 'weak_password' || message.includes('password should be')) {
     return ApiError.unprocessable('Password does not meet the minimum strength.', {
       password: 'Choose a stronger password.',
     });
+  }
+
+  // Invalid/expired recovery code on reset → 401 UNAUTHENTICATED (UA-5).
+  if (flow === 'reset') {
+    return ApiError.unauthenticated('Reset code is invalid or expired.');
   }
 
   // Bad credentials / unverified identity → 401 UNAUTHENTICATED (UA-2 acceptance).

@@ -15,10 +15,12 @@ import type { AuthRepository } from '../domain/auth.repository';
 import type {
   AccountSnapshot,
   AuthTokens,
+  ChangePasswordCommand,
   CyclingType,
   LoginCommand,
   RawSession,
   RegisterCommand,
+  ResetPasswordCommand,
   SelfUser,
   UserRole,
 } from '../domain/auth.types';
@@ -111,6 +113,57 @@ export class SupabaseAuthRepository implements AuthRepository {
     if (!response.ok && response.status !== 204) {
       throw ApiError.internal('Could not complete logout.');
     }
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    // Triggers the recovery email. With an OTP email template ({{ .Token }})
+    // this delivers a 6-digit code — no link/redirect involved.
+    const supabase = createPublicClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    // The use-case suppresses errors (no enumeration), but we still surface them
+    // here so genuine outages (e.g. rate limit) are logged at the boundary.
+    if (error) throw mapAuthError(error, 'reset');
+  }
+
+  async resetPassword(command: ResetPasswordCommand): Promise<void> {
+    const supabase = createPublicClient();
+
+    // Verify the 6-digit recovery OTP for that email; verifyOtp returns a
+    // session which we then use to set the new password on the same instance.
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: command.email,
+      token: command.token,
+      type: 'recovery',
+    });
+    if (error) throw mapAuthError(error, 'reset');
+    if (!data.session) throw ApiError.unauthenticated('Reset code is invalid or expired.');
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: command.newPassword,
+    });
+    if (updateError) throw mapAuthError(updateError, 'reset');
+  }
+
+  async changePassword(command: ChangePasswordCommand): Promise<void> {
+    const scoped = createScopedClient(command.accessToken);
+
+    // Resolve the caller's email to re-verify their current password.
+    const { data: authUser } = await scoped.auth.getUser(command.accessToken);
+    const email = authUser.user?.email;
+    if (!email) throw ApiError.unauthenticated('Access token is invalid or expired.');
+
+    // Re-authenticate with the current password; wrong password → 403 (UA-5).
+    const verifier = createPublicClient();
+    const { error: signInError } = await verifier.auth.signInWithPassword({
+      email,
+      password: command.currentPassword,
+    });
+    if (signInError) throw ApiError.forbidden('Current password is incorrect.');
+
+    const { error: updateError } = await scoped.auth.updateUser({
+      password: command.newPassword,
+    });
+    if (updateError) throw mapAuthError(updateError, 'change');
   }
 
   async getAccountSnapshot(session: RawSession): Promise<AccountSnapshot> {
