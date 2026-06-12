@@ -25,8 +25,10 @@ export function toErrorResponse(error: unknown, requestId: string): NextResponse
     },
   };
 
-  return NextResponse.json(body, {
-    status: apiError.status,
-    headers: { [REQUEST_ID_HEADER]: requestId },
-  });
+  const headers: Record<string, string> = { [REQUEST_ID_HEADER]: requestId };
+  if (apiError.retryAfter != null) {
+    headers['Retry-After'] = String(apiError.retryAfter);
+  }
+
+  return NextResponse.json(body, { status: apiError.status, headers });
 }

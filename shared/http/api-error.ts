@@ -35,13 +35,16 @@ export class ApiError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
   readonly fields?: FieldErrors;
+  /** Seconds to wait before retrying — emitted as a `Retry-After` header (§1.8). */
+  readonly retryAfter?: number;
 
-  constructor(code: ErrorCode, message: string, fields?: FieldErrors) {
+  constructor(code: ErrorCode, message: string, fields?: FieldErrors, retryAfter?: number) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = STATUS_BY_CODE[code];
     this.fields = fields;
+    this.retryAfter = retryAfter;
   }
 
   static validation(message = 'Request validation failed.', fields?: FieldErrors): ApiError {
@@ -64,8 +67,11 @@ export class ApiError extends Error {
     return new ApiError('UNPROCESSABLE', message, fields);
   }
 
-  static rateLimited(message = 'Too many requests. Please try again later.'): ApiError {
-    return new ApiError('RATE_LIMITED', message);
+  static rateLimited(
+    message = 'Too many requests. Please try again later.',
+    retryAfter?: number,
+  ): ApiError {
+    return new ApiError('RATE_LIMITED', message, undefined, retryAfter);
   }
 
   static internal(message = 'An unexpected error occurred.'): ApiError {
