@@ -5,6 +5,7 @@
  * `profiles` — returning the profile row *without* coordinates (LP-1).
  */
 import { createScopedClient } from '@/shared/supabase/server-client';
+import { rethrowIfAuthError } from '@/shared/supabase/errors';
 import { ApiError } from '@/shared/http/api-error';
 import type { LocationRepository } from '../domain/location.repository';
 import type { LocationResult, MyLocation, SetLocationCommand } from '../domain/location.types';
@@ -27,6 +28,7 @@ export class SupabaseLocationRepository implements LocationRepository {
     });
 
     if (error) {
+      rethrowIfAuthError(error); // expired/invalid JWT → 401, not 500
       console.error('[location] set_my_location failed', error);
       throw ApiError.internal('Could not save your location. Please try again.');
     }
@@ -60,6 +62,7 @@ export class SupabaseLocationRepository implements LocationRepository {
     ]);
 
     if (profileRes.error || !profileRes.data) {
+      rethrowIfAuthError(profileRes.error);
       console.error('[location] profile read failed', profileRes.error);
       throw ApiError.internal();
     }

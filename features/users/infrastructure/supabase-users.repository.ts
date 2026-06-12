@@ -9,6 +9,7 @@
  *    read here — only `display_area` / `area_level` (LP-1, LP-2).
  */
 import { createScopedClient } from '@/shared/supabase/server-client';
+import { rethrowIfAuthError } from '@/shared/supabase/errors';
 import { ApiError } from '@/shared/http/api-error';
 import type { UsersRepository } from '../domain/users.repository';
 import type {
@@ -63,6 +64,7 @@ export class SupabaseUsersRepository implements UsersRepository {
     ]);
 
     if (profileRes.error || !profileRes.data) {
+      rethrowIfAuthError(profileRes.error);
       console.error('[users] profile row missing for authenticated user', profileRes.error);
       throw ApiError.internal();
     }
@@ -92,6 +94,7 @@ export class SupabaseUsersRepository implements UsersRepository {
     if (Object.keys(profilePatch).length > 0) {
       const { error } = await supabase.from('profiles').update(profilePatch).eq('id', id);
       if (error) {
+        rethrowIfAuthError(error);
         console.error('[users] profile update failed', error);
         throw ApiError.internal('Could not update your profile. Please try again.');
       }
@@ -103,6 +106,7 @@ export class SupabaseUsersRepository implements UsersRepository {
         .update({ contact_preference: command.contactPreference })
         .eq('user_id', id);
       if (error) {
+        rethrowIfAuthError(error);
         console.error('[users] settings update failed', error);
         throw ApiError.internal('Could not update your profile. Please try again.');
       }
@@ -128,6 +132,7 @@ export class SupabaseUsersRepository implements UsersRepository {
     ]);
 
     if (profileRes.error) {
+      rethrowIfAuthError(profileRes.error);
       console.error('[users] public profile read failed', profileRes.error);
       throw ApiError.internal();
     }
@@ -151,6 +156,7 @@ export class SupabaseUsersRepository implements UsersRepository {
       .update({ avatar_url: avatarUrl })
       .eq('id', id);
     if (error) {
+      rethrowIfAuthError(error);
       console.error('[users] avatar url update failed', error);
       throw ApiError.internal('Could not save your avatar. Please try again.');
     }
