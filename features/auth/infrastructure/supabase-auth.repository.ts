@@ -49,15 +49,6 @@ export class SupabaseAuthRepository implements AuthRepository {
     });
 
     if (error) throw mapAuthError(error, 'register');
-
-    // User created but no session => email confirmation is enabled on the
-    // Supabase project. The contract (§3) expects immediate tokens on 201, so
-    // confirmation must be disabled (Auth → Providers → Email → Confirm email).
-    if (data.user && !data.session) {
-      throw ApiError.unprocessable(
-        'Account created but requires email confirmation. Disable "Confirm email" in Supabase Auth to issue tokens on register.',
-      );
-    }
     return this.toRawSession(data.session, data.user?.id);
   }
 
@@ -108,10 +99,11 @@ export class SupabaseAuthRepository implements AuthRepository {
     });
 
     if (response.status === 401) {
-      throw ApiError.unauthenticated('Access token is invalid or expired.');
+      throw ApiError.unauthenticated('Your session has expired. Please sign in again.');
     }
     if (!response.ok && response.status !== 204) {
-      throw ApiError.internal('Could not complete logout.');
+      console.error('[auth] logout failed', response.status);
+      throw ApiError.internal();
     }
   }
 
@@ -150,7 +142,7 @@ export class SupabaseAuthRepository implements AuthRepository {
     // Resolve the caller's email to re-verify their current password.
     const { data: authUser } = await scoped.auth.getUser(command.accessToken);
     const email = authUser.user?.email;
-    if (!email) throw ApiError.unauthenticated('Access token is invalid or expired.');
+    if (!email) throw ApiError.unauthenticated('Your session has expired. Please sign in again.');
 
     // Re-authenticate with the current password; wrong password → 403 (UA-5).
     const verifier = createPublicClient();
@@ -198,7 +190,8 @@ export class SupabaseAuthRepository implements AuthRepository {
       ]);
 
     if (profileRes.error || !profileRes.data) {
-      throw ApiError.internal('Account profile is not available yet.');
+      console.error('[auth] profile row missing for authenticated user', profileRes.error);
+      throw ApiError.internal();
     }
 
     const profile = profileRes.data as ProfileRow;
@@ -236,7 +229,8 @@ export class SupabaseAuthRepository implements AuthRepository {
     // With email confirmation disabled (MVP), register/login return a session
     // immediately (API_CONTRACT.md §3 returns tokens on 201/200).
     if (!session || !userId) {
-      throw ApiError.internal('Authentication provider returned no session.');
+      console.error('[auth] auth flow returned no session/user unexpectedly');
+      throw ApiError.internal();
     }
     return { userId, tokens: this.toTokens(session) };
   }
