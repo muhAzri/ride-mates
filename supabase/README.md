@@ -77,11 +77,27 @@ separate **owner-only** tables that other clients can never `SELECT`:
 
 ## Photos / media
 
-The DB stores **URLs only** — files live in an external S3-compatible bucket.
-`listing_photos.url`, `profiles.avatar_url`, and `feedback.screenshot_url` are
-plain strings written after the client uploads (`POST /uploads` in the
-contract). `width`/`height` on photos are optional layout hints. No Supabase
-Storage buckets are required by these migrations.
+The DB stores **URLs only** — files live in an external S3-compatible bucket
+(**IDCloudHost Object Storage**, `is3.cloudhost.id`). `listing_photos.url`,
+`profiles.avatar_url`, and `feedback.screenshot_url` are plain strings written
+after the client uploads. `width`/`height` on photos are optional layout hints.
+No Supabase Storage buckets are required by these migrations.
+
+The upload path lives in the web/backend app, not in these migrations:
+
+- Service: `ride-mates/shared/storage/` — a generic `ObjectStorage` port with a
+  hand-rolled SigV4 S3 adapter (`fetch` + `crypto`, no AWS SDK). Configure via
+  the `S3_*` vars in `.env.example`.
+- Every object is uploaded **`public-read`**, so the returned URL is directly
+  fetchable by web/mobile clients without a presign step.
+- The frontend compresses & converts images to **WebP** before upload; the API
+  re-validates type (WebP/JPEG/PNG) and size (avatar ≤5 MB) defensively.
+- **Avatar foldering is storage-thrifty (UA-4).** Each user has a single,
+  deterministic, extension-less key `avatars/{userId}`. Changing an avatar
+  **overwrites** that object, so old images never accumulate as orphans. Because
+  the URL is otherwise stable, the API appends a cache-busting `?v=<ts>` token
+  (stored in `profiles.avatar_url`) so CDNs/clients pick up the new image.
+  `DELETE /users/me/avatar` removes the object and sets `avatar_url = null`.
 
 ## RLS summary
 
