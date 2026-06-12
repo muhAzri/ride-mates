@@ -9,9 +9,11 @@
 import type {
   AccountSnapshot,
   AuthTokens,
+  ChangePasswordCommand,
   LoginCommand,
   RawSession,
   RegisterCommand,
+  ResetPasswordCommand,
 } from './auth.types';
 
 export interface AuthRepository {
@@ -29,6 +31,18 @@ export interface AuthRepository {
 
   /** Revoke the session behind an access token (logout — UA-2). */
   revokeSession(accessToken: string): Promise<void>;
+
+  /**
+   * Send a password-recovery email if the account exists (UA-5). Implementations
+   * must not reveal whether the email is registered (no account enumeration).
+   */
+  requestPasswordReset(email: string): Promise<void>;
+
+  /** Consume a recovery token and set a new password (UA-5). */
+  resetPassword(command: ResetPasswordCommand): Promise<void>;
+
+  /** Change the caller's password after verifying the current one (UA-5). */
+  changePassword(command: ChangePasswordCommand): Promise<void>;
 
   /** Read the caller's self projection + onboarding flags for a fresh session. */
   getAccountSnapshot(session: RawSession): Promise<AccountSnapshot>;

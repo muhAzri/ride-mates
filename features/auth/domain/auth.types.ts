@@ -70,3 +70,18 @@ export interface LoginCommand {
   email: string;
   password: string;
 }
+
+export interface ResetPasswordCommand {
+  /** Email the recovery code was sent to — required to verify the OTP (UA-5). */
+  email: string;
+  /** 6-digit recovery OTP delivered to the user by email (UA-5). */
+  token: string;
+  newPassword: string;
+}
+
+export interface ChangePasswordCommand {
+  /** Caller's bearer access token (the endpoint is auth-required). */
+  accessToken: string;
+  currentPassword: string;
+  newPassword: string;
+}
