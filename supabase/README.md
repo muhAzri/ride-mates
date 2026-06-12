@@ -19,6 +19,7 @@ migrations.
 | `…090500_moderation.sql` | `reports`, `blocks`, `resolve_report()` | MD-1..5, §12, §15 |
 | `…090600_notifications.sql` | `notifications`, fan-out triggers (message/reply) | NT-1, NT-2, §11 |
 | `…090700_feedback_and_changelog.sql` | `feedback`, `feature_requests`, `feature_request_votes`, `changelog_entries` | FB-2, FB-3, §13 |
+| `…091200_device_tokens.sql` | `device_tokens`, `device_platform` enum, `register_device_token()` | NT-3, §11, R15 |
 
 Files are timestamp-ordered; apply them in filename order.
 
@@ -132,6 +133,7 @@ Every table has RLS enabled. The recurring patterns:
 | `create_listing(title, description, price_idr, category, condition, photos jsonb)` | Insert a listing + its photos (1–3) atomically | `POST /listings` |
 | `listing_detail(id)` | One listing: distance, photos, seller mini, saved-state | `GET /listings/{id}` |
 | `saved_listings_feed(limit, offset)` | Wishlist as ListingCards + total count | `GET /me/saved/listings` |
+| `register_device_token(token, platform)` | Upsert the caller's push token; re-owns it on device hand-off | `POST /me/devices` |
 | `get_or_create_conversation(other_user, listing_ref)` | Idempotent 1:1 conversation | `POST /conversations` |
 | `my_conversations(limit, offset)` | Conversation list + unread counts | `GET /conversations` |
 | `mark_conversation_read(conversation_id)` | Clear unread | `POST /conversations/{id}/read` |
