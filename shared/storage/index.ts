@@ -18,7 +18,9 @@ export function getObjectStorage(): ObjectStorage {
 export type { ObjectStorage, PutObjectInput } from './object-storage';
 export {
   assertValidAvatar,
+  assertValidListingPhoto,
   ALLOWED_IMAGE_TYPES,
   AVATAR_MAX_BYTES,
+  LISTING_PHOTO_MAX_BYTES,
   type UploadedImage,
 } from './image-validation';

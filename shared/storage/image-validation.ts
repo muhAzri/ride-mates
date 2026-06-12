@@ -13,6 +13,7 @@ export const ALLOWED_IMAGE_TYPES = ['image/webp', 'image/jpeg', 'image/png'] as 
 export type AllowedImageType = (typeof ALLOWED_IMAGE_TYPES)[number];
 
 export const AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB (UA-4 / §4.3)
+export const LISTING_PHOTO_MAX_BYTES = 8 * 1024 * 1024; // 8 MB (MP-1 / §4.3)
 
 export interface UploadedImage {
   body: Buffer;
@@ -21,20 +22,23 @@ export interface UploadedImage {
 }
 
 /**
- * Validate an uploaded avatar image. Returns the normalised content type
- * (frontend should send WebP; we still accept JPEG/PNG per the contract).
+ * Validate an uploaded image against a size cap and the allowed type list,
+ * returning the normalised content type. Failures map to 422 (the bytes are
+ * semantically wrong). The `tooLarge` copy names the per-surface limit.
  */
-export function assertValidAvatar(image: UploadedImage): AllowedImageType {
+function assertValidImage(
+  image: UploadedImage,
+  maxBytes: number,
+  tooLarge: string,
+): AllowedImageType {
   if (image.size === 0) {
     throw ApiError.unprocessable('The uploaded file is empty.', {
       file: 'Choose an image to upload.',
     });
   }
 
-  if (image.size > AVATAR_MAX_BYTES) {
-    throw ApiError.unprocessable('Image is too large.', {
-      file: 'Avatar must be 5 MB or smaller.',
-    });
+  if (image.size > maxBytes) {
+    throw ApiError.unprocessable('Image is too large.', { file: tooLarge });
   }
 
   const type = image.contentType.split(';')[0].trim().toLowerCase();
@@ -45,4 +49,17 @@ export function assertValidAvatar(image: UploadedImage): AllowedImageType {
   }
 
   return type as AllowedImageType;
+}
+
+/**
+ * Validate an uploaded avatar image (≤5 MB). Returns the normalised content type
+ * (frontend should send WebP; we still accept JPEG/PNG per the contract).
+ */
+export function assertValidAvatar(image: UploadedImage): AllowedImageType {
+  return assertValidImage(image, AVATAR_MAX_BYTES, 'Avatar must be 5 MB or smaller.');
+}
+
+/** Validate an uploaded listing photo (≤8 MB, §4.3). Returns the content type. */
+export function assertValidListingPhoto(image: UploadedImage): AllowedImageType {
+  return assertValidImage(image, LISTING_PHOTO_MAX_BYTES, 'Each photo must be 8 MB or smaller.');
 }

@@ -65,6 +65,17 @@ export class S3ObjectStorage implements ObjectStorage {
     }
   }
 
+  async removeByUrl(url: string): Promise<void> {
+    const prefix = `${this.config.publicBaseUrl}/`;
+    if (!url.startsWith(prefix)) {
+      // Not one of our objects (e.g. an external URL) — nothing to remove.
+      return;
+    }
+    // Strip any cache-busting query before resolving the key.
+    const key = url.slice(prefix.length).split('?')[0];
+    if (key) await this.remove(key);
+  }
+
   publicUrl(key: string): string {
     return `${this.config.publicBaseUrl}/${key}`;
   }

@@ -27,6 +27,13 @@ export interface ObjectStorage {
   /** Delete an object. Idempotent: a missing key is treated as success. */
   remove(key: string): Promise<void>;
 
+  /**
+   * Delete an object given its public URL (the inverse of `publicUrl`). Used when
+   * the caller stored URLs (e.g. `listing_photos.url`) and needs to clean them up.
+   * A URL not served by this store is ignored.
+   */
+  removeByUrl(url: string): Promise<void>;
+
   /** Public URL an object key is served from (no cache-busting query). */
   publicUrl(key: string): string;
 }
