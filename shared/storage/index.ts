@@ -19,6 +19,7 @@ export type { ObjectStorage, PutObjectInput } from './object-storage';
 export {
   assertValidAvatar,
   assertValidListingPhoto,
+  assertValidScreenshot,
   ALLOWED_IMAGE_TYPES,
   AVATAR_MAX_BYTES,
   LISTING_PHOTO_MAX_BYTES,

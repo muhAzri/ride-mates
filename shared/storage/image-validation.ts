@@ -63,3 +63,8 @@ export function assertValidAvatar(image: UploadedImage): AllowedImageType {
 export function assertValidListingPhoto(image: UploadedImage): AllowedImageType {
   return assertValidImage(image, LISTING_PHOTO_MAX_BYTES, 'Each photo must be 8 MB or smaller.');
 }
+
+/** Validate an uploaded feedback screenshot (≤5 MB, §4.3). Returns the content type. */
+export function assertValidScreenshot(image: UploadedImage): AllowedImageType {
+  return assertValidImage(image, AVATAR_MAX_BYTES, 'Screenshot must be 5 MB or smaller.');
+}
