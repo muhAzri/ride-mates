@@ -12,6 +12,7 @@ import { DeleteThreadUseCase } from './application/delete-thread.usecase';
 import { UpvoteThreadUseCase } from './application/upvote-thread.usecase';
 import { CommentsUseCase } from './application/comments.usecase';
 import { BookmarkThreadsUseCase } from './application/bookmark-threads.usecase';
+import { ListAuthorThreadsUseCase } from './application/list-author-threads.usecase';
 import { ForumController } from './presentation/forum.controller';
 
 const repository = new SupabaseForumRepository();
@@ -24,4 +25,5 @@ export const forumController = new ForumController({
   upvote: new UpvoteThreadUseCase(repository),
   comments: new CommentsUseCase(repository),
   bookmarks: new BookmarkThreadsUseCase(repository),
+  authorThreads: new ListAuthorThreadsUseCase(repository),
 });

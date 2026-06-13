@@ -15,6 +15,7 @@ import type { DeleteThreadUseCase } from '../application/delete-thread.usecase';
 import type { UpvoteThreadUseCase } from '../application/upvote-thread.usecase';
 import type { CommentsUseCase } from '../application/comments.usecase';
 import type { BookmarkThreadsUseCase } from '../application/bookmark-threads.usecase';
+import type { ListAuthorThreadsUseCase } from '../application/list-author-threads.usecase';
 import {
   createCommentSchema,
   createThreadSchema,
@@ -31,6 +32,7 @@ export interface ForumUseCases {
   upvote: UpvoteThreadUseCase;
   comments: CommentsUseCase;
   bookmarks: BookmarkThreadsUseCase;
+  authorThreads: ListAuthorThreadsUseCase;
 }
 
 export class ForumController {
@@ -125,6 +127,16 @@ export class ForumController {
     const accessToken = this.requireToken(request);
     const result = await this.useCases.bookmarks.unbookmark(accessToken, threadId);
     return json(result, 200);
+  }
+
+  /** GET /users/{userId}/threads (CF-1, 13 Profile › Threads). */
+  async listByAuthor(request: NextRequest, authorId: string): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const { limit } = parseInput(listQuerySchema, Object.fromEntries(request.nextUrl.searchParams));
+    const offset = decodeCursor(request.nextUrl.searchParams.get('cursor'));
+
+    const page = await this.useCases.authorThreads.execute(accessToken, authorId, limit, offset);
+    return json({ data: page.data.map(toThreadListDto), page: page.page }, 200);
   }
 
   /** GET /me/saved/threads (§9, 14 Saved › Threads). */

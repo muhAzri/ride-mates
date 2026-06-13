@@ -100,6 +100,37 @@ export class SupabaseForumRepository implements ForumRepository {
     return rows.map((row) => toThread(row, upvoted.has(row.id), bookmarked.has(row.id)));
   }
 
+  async listByAuthor(
+    accessToken: string,
+    authorId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Thread[]> {
+    const supabase = createScopedClient(accessToken);
+
+    const { data, error } = await supabase
+      .from('threads')
+      .select(THREAD_SELECT)
+      .eq('author_id', authorId)
+      .is('removed_at', null)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      rethrowIfAuthError(error);
+      console.error('[forum] list by author failed', error);
+      throw ApiError.internal("Could not load the user's threads. Please try again.");
+    }
+
+    const rows = (data ?? []) as ThreadRow[];
+    const ids = rows.map((r) => r.id);
+    const [upvoted, bookmarked] = await Promise.all([
+      this.flaggedAmong(supabase, 'thread_upvotes', ids),
+      this.flaggedAmong(supabase, 'thread_bookmarks', ids),
+    ]);
+    return rows.map((row) => toThread(row, upvoted.has(row.id), bookmarked.has(row.id)));
+  }
+
   async createThread(accessToken: string, command: CreateThreadCommand): Promise<Thread> {
     const supabase = createScopedClient(accessToken);
     const userId = await this.requireUserId(supabase, accessToken);

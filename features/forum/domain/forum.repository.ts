@@ -37,6 +37,14 @@ export interface ForumRepository {
   /** List/search/filter threads (CF-1/4/5). Fetches `query.limit` rows. */
   listThreads(accessToken: string, query: ThreadQuery): Promise<Thread[]>;
 
+  /** A specific author's (non-removed) threads for their profile tab (13). */
+  listByAuthor(
+    accessToken: string,
+    authorId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Thread[]>;
+
   /** Create a thread (CF-1) and return it. */
   createThread(accessToken: string, command: CreateThreadCommand): Promise<Thread>;
 
