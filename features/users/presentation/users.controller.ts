@@ -13,8 +13,10 @@ import type { UpdateProfileUseCase } from '../application/update-profile.usecase
 import type { GetPublicProfileUseCase } from '../application/get-public-profile.usecase';
 import type { SetAvatarUseCase } from '../application/set-avatar.usecase';
 import type { RemoveAvatarUseCase } from '../application/remove-avatar.usecase';
-import { updateProfileSchema } from './users.schemas';
-import { toPublicUserDto, toSelfUserDto } from './users.mapper';
+import type { GetNotificationPreferencesUseCase } from '../application/get-notification-preferences.usecase';
+import type { UpdateNotificationPreferencesUseCase } from '../application/update-notification-preferences.usecase';
+import { updateNotificationPreferencesSchema, updateProfileSchema } from './users.schemas';
+import { toNotificationPreferencesDto, toPublicUserDto, toSelfUserDto } from './users.mapper';
 
 export interface UsersUseCases {
   getMe: GetMeUseCase;
@@ -22,6 +24,8 @@ export interface UsersUseCases {
   getPublicProfile: GetPublicProfileUseCase;
   setAvatar: SetAvatarUseCase;
   removeAvatar: RemoveAvatarUseCase;
+  getNotificationPreferences: GetNotificationPreferencesUseCase;
+  updateNotificationPreferences: UpdateNotificationPreferencesUseCase;
 }
 
 export class UsersController {
@@ -55,6 +59,21 @@ export class UsersController {
     const accessToken = this.requireToken(request);
     await this.useCases.removeAvatar.execute(accessToken);
     return noContent();
+  }
+
+  /** GET /me/notification-preferences (§14). */
+  async getNotificationPreferences(request: NextRequest): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const prefs = await this.useCases.getNotificationPreferences.execute(accessToken);
+    return json(toNotificationPreferencesDto(prefs), 200);
+  }
+
+  /** PATCH /me/notification-preferences (§14). */
+  async updateNotificationPreferences(request: NextRequest): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const body = parseInput(updateNotificationPreferencesSchema, await readJsonBody(request));
+    const prefs = await this.useCases.updateNotificationPreferences.execute(accessToken, body);
+    return json(toNotificationPreferencesDto(prefs), 200);
   }
 
   /** GET /users/{userId} — public projection (UA-3). */

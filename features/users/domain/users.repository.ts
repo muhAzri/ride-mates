@@ -6,8 +6,10 @@
  */
 import type {
   AuthIdentity,
+  NotificationPreferences,
   PublicProfile,
   SelfProfile,
+  UpdateNotificationPreferencesCommand,
   UpdateProfileCommand,
 } from './user.types';
 
@@ -26,4 +28,13 @@ export interface UsersRepository {
 
   /** Persist (or clear, with `null`) the caller's avatar URL on their profile. */
   setAvatarUrl(accessToken: string, avatarUrl: string | null): Promise<void>;
+
+  /** Read the caller's notification toggles (§14). */
+  getNotificationPreferences(accessToken: string): Promise<NotificationPreferences>;
+
+  /** Apply a partial update to the toggles and return the refreshed values. */
+  updateNotificationPreferences(
+    accessToken: string,
+    command: UpdateNotificationPreferencesCommand,
+  ): Promise<NotificationPreferences>;
 }

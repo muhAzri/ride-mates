@@ -4,7 +4,11 @@
  * know which fields are caller-visible (email/role/contactPreference are
  * self-only; coordinates appear in neither — LP-1).
  */
-import type { PublicProfile, SelfProfile } from '../domain/user.types';
+import type {
+  NotificationPreferences,
+  PublicProfile,
+  SelfProfile,
+} from '../domain/user.types';
 
 /** User (self) — `GET /users/me`, `PATCH /users/me`. */
 export function toSelfUserDto(user: SelfProfile) {
@@ -24,6 +28,11 @@ export function toSelfUserDto(user: SelfProfile) {
     role: user.role,
     createdAt: user.createdAt,
   };
+}
+
+/** Notification toggles — `GET/PATCH /me/notification-preferences` (§14). */
+export function toNotificationPreferencesDto(prefs: NotificationPreferences) {
+  return { newMessages: prefs.newMessages, threadReplies: prefs.threadReplies };
 }
 
 /** User (public) — `GET /users/{userId}`. No email/role/contactPreference. */

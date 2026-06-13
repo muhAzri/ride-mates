@@ -15,8 +15,10 @@ import type { UsersRepository } from '../domain/users.repository';
 import type {
   AuthIdentity,
   CyclingType,
+  NotificationPreferences,
   PublicProfile,
   SelfProfile,
+  UpdateNotificationPreferencesCommand,
   UpdateProfileCommand,
   UserRole,
 } from '../domain/user.types';
@@ -160,6 +162,53 @@ export class SupabaseUsersRepository implements UsersRepository {
       console.error('[users] avatar url update failed', error);
       throw ApiError.internal('Could not save your avatar. Please try again.');
     }
+  }
+
+  async getNotificationPreferences(accessToken: string): Promise<NotificationPreferences> {
+    const supabase = createScopedClient(accessToken);
+    const { id } = await this.getIdentity(accessToken);
+
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('notif_new_messages, notif_thread_replies')
+      .eq('user_id', id)
+      .maybeSingle();
+
+    if (error) {
+      rethrowIfAuthError(error);
+      console.error('[users] notification prefs read failed', error);
+      throw ApiError.internal();
+    }
+
+    const row = data as { notif_new_messages?: boolean; notif_thread_replies?: boolean } | null;
+    // Defaults mirror the DB (`true`) when no settings row exists yet.
+    return {
+      newMessages: row?.notif_new_messages ?? true,
+      threadReplies: row?.notif_thread_replies ?? true,
+    };
+  }
+
+  async updateNotificationPreferences(
+    accessToken: string,
+    command: UpdateNotificationPreferencesCommand,
+  ): Promise<NotificationPreferences> {
+    const supabase = createScopedClient(accessToken);
+    const { id } = await this.getIdentity(accessToken);
+
+    const patch: Record<string, unknown> = {};
+    if (command.newMessages !== undefined) patch.notif_new_messages = command.newMessages;
+    if (command.threadReplies !== undefined) patch.notif_thread_replies = command.threadReplies;
+
+    if (Object.keys(patch).length > 0) {
+      const { error } = await supabase.from('user_settings').update(patch).eq('user_id', id);
+      if (error) {
+        rethrowIfAuthError(error);
+        console.error('[users] notification prefs update failed', error);
+        throw ApiError.internal('Could not update your notification settings. Please try again.');
+      }
+    }
+
+    return this.getNotificationPreferences(accessToken);
   }
 
   /** Shared mapping of the public columns + aggregate counts. */

@@ -58,3 +58,18 @@ export interface AuthIdentity {
   id: string;
   email: string;
 }
+
+/**
+ * In-app notification toggles (Settings 16 → §14). These gate in-app delivery in
+ * the MVP (and OS push once the FCM sender lands). Backed by `user_settings`.
+ */
+export interface NotificationPreferences {
+  newMessages: boolean;
+  threadReplies: boolean;
+}
+
+/** Partial update of the notification toggles (PATCH /me/notification-preferences). */
+export interface UpdateNotificationPreferencesCommand {
+  newMessages?: boolean;
+  threadReplies?: boolean;
+}

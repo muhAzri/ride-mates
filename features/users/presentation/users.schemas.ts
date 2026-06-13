@@ -38,3 +38,21 @@ export const updateProfileSchema = z
   });
 
 export type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
+
+/**
+ * PATCH /me/notification-preferences — partial; at least one toggle required so
+ * an empty body is a clear 400 rather than a silent no-op (§14).
+ */
+export const updateNotificationPreferencesSchema = z
+  .object({
+    newMessages: z.boolean(),
+    threadReplies: z.boolean(),
+  })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'Provide at least one preference to update.',
+  });
+
+export type UpdateNotificationPreferencesBody = z.infer<
+  typeof updateNotificationPreferencesSchema
+>;

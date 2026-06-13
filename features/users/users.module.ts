@@ -11,6 +11,8 @@ import { UpdateProfileUseCase } from './application/update-profile.usecase';
 import { GetPublicProfileUseCase } from './application/get-public-profile.usecase';
 import { SetAvatarUseCase } from './application/set-avatar.usecase';
 import { RemoveAvatarUseCase } from './application/remove-avatar.usecase';
+import { GetNotificationPreferencesUseCase } from './application/get-notification-preferences.usecase';
+import { UpdateNotificationPreferencesUseCase } from './application/update-notification-preferences.usecase';
 import { UsersController } from './presentation/users.controller';
 
 const repository = new SupabaseUsersRepository();
@@ -22,4 +24,6 @@ export const usersController = new UsersController({
   getPublicProfile: new GetPublicProfileUseCase(repository),
   setAvatar: new SetAvatarUseCase(repository, storage),
   removeAvatar: new RemoveAvatarUseCase(repository, storage),
+  getNotificationPreferences: new GetNotificationPreferencesUseCase(repository),
+  updateNotificationPreferences: new UpdateNotificationPreferencesUseCase(repository),
 });
