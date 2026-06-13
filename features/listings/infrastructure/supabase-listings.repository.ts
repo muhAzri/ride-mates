@@ -128,6 +128,59 @@ export class SupabaseListingsRepository implements ListingsRepository {
     }));
   }
 
+  async listByOwner(
+    accessToken: string,
+    ownerId: string,
+    limit: number,
+    offset: number,
+  ): Promise<ListingCard[]> {
+    const supabase = createScopedClient(accessToken);
+
+    const { data, error } = await supabase
+      .from('listings')
+      .select('id, title, price_idr, category, condition, status, display_area, created_at')
+      .eq('owner_id', ownerId)
+      .is('removed_at', null)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      rethrowIfAuthError(error);
+      console.error('[listings] list by owner failed', error);
+      throw ApiError.internal("Could not load the seller's listings. Please try again.");
+    }
+
+    const rows = (data ?? []) as Array<{
+      id: string;
+      title: string;
+      price_idr: number | string;
+      category: ListingCategory;
+      condition: ListingCondition;
+      status: ListingStatus;
+      display_area: string | null;
+      created_at: string;
+    }>;
+    const ids = rows.map((r) => r.id);
+    const [savedIds, firstPhotos] = await Promise.all([
+      this.savedIdsAmong(supabase, ids),
+      this.firstPhotosFor(supabase, ids),
+    ]);
+
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      priceIdr: Number(row.price_idr),
+      category: row.category,
+      condition: row.condition,
+      status: row.status,
+      displayArea: row.display_area,
+      distanceKm: null, // not computed for owner-scoped lists (no SECURITY DEFINER hop)
+      photos: toCardPhotos(firstPhotos.get(row.id) ?? null),
+      isSavedByMe: savedIds.has(row.id),
+      createdAt: row.created_at,
+    }));
+  }
+
   async create(accessToken: string, command: CreateListingCommand): Promise<Listing> {
     const supabase = createScopedClient(accessToken);
 
@@ -385,6 +438,30 @@ export class SupabaseListingsRepository implements ListingsRepository {
       return new Set(); // non-fatal: cards still render, just unsaved
     }
     return new Set((data as Array<{ listing_id: string }>).map((r) => r.listing_id));
+  }
+
+  /** First photo URL per listing id (lowest position), for owner-scoped cards. */
+  private async firstPhotosFor(
+    supabase: ScopedClient,
+    ids: string[],
+  ): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const { data, error } = await supabase
+      .from('listing_photos')
+      .select('listing_id, url, position')
+      .in('listing_id', ids)
+      .order('position', { ascending: true });
+    if (error) {
+      rethrowIfAuthError(error);
+      console.error('[listings] first photos lookup failed', error);
+      return new Map();
+    }
+
+    const firstByListing = new Map<string, string>();
+    for (const row of data as Array<{ listing_id: string; url: string }>) {
+      if (!firstByListing.has(row.listing_id)) firstByListing.set(row.listing_id, row.url);
+    }
+    return firstByListing;
   }
 
   private toListing(row: DetailRow, viewerId: string): Listing {

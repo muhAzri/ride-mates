@@ -21,6 +21,7 @@ import type { CreateListingUseCase } from '../application/create-listing.usecase
 import type { GetListingUseCase } from '../application/get-listing.usecase';
 import type { UpdateListingUseCase } from '../application/update-listing.usecase';
 import type { DeleteListingUseCase } from '../application/delete-listing.usecase';
+import type { ListOwnerListingsUseCase } from '../application/list-owner-listings.usecase';
 import type { SavedListingsUseCase } from '../application/saved-listings.usecase';
 import {
   browseQuerySchema,
@@ -37,6 +38,7 @@ export interface ListingsUseCases {
   getOne: GetListingUseCase;
   update: UpdateListingUseCase;
   remove: DeleteListingUseCase;
+  ownerListings: ListOwnerListingsUseCase;
   saved: SavedListingsUseCase;
 }
 
@@ -133,6 +135,16 @@ export class ListingsController {
     const accessToken = this.requireToken(request);
     const result = await this.useCases.saved.unsave(accessToken, listingId);
     return json(result, 200);
+  }
+
+  /** GET /users/{userId}/listings (MP-4, 13 Profile › Listings). */
+  async listByOwner(request: NextRequest, ownerId: string): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const { limit } = parseInput(savedQuerySchema, Object.fromEntries(request.nextUrl.searchParams));
+    const offset = decodeCursor(request.nextUrl.searchParams.get('cursor'));
+
+    const page = await this.useCases.ownerListings.execute(accessToken, ownerId, limit, offset);
+    return json({ data: page.data.map(toListingCardDto), page: page.page }, 200);
   }
 
   /** GET /me/saved/listings (§7, 14 Saved). */

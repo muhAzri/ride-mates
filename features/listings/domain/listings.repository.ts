@@ -34,6 +34,18 @@ export interface ListingsRepository {
   /** Browse/search/filter with proximity (MP-4/5/10/11). Fetches `limit` rows. */
   browse(accessToken: string, query: BrowseQuery): Promise<ListingCard[]>;
 
+  /**
+   * A specific owner's listings for their profile tab (13). RLS scopes visibility
+   * (others see active only; the owner sees all their statuses). Distance is not
+   * computed here, so `distanceKm` is null. Fetches `limit` rows.
+   */
+  listByOwner(
+    accessToken: string,
+    ownerId: string,
+    limit: number,
+    offset: number,
+  ): Promise<ListingCard[]>;
+
   /** Create a listing + its (already-uploaded) photos atomically, return detail (MP-1). */
   create(accessToken: string, command: CreateListingCommand): Promise<Listing>;
 
