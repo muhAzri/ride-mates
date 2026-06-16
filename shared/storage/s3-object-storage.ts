@@ -11,10 +11,21 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ApiError } from '@/shared/http/api-error';
-import type { ObjectStorage, PutObjectInput } from './object-storage';
+import type {
+  ObjectHead,
+  ObjectStorage,
+  PresignPutInput,
+  PresignedUpload,
+  PutObjectInput,
+} from './object-storage';
 import { getStorageConfig, type StorageConfig } from './storage.config';
+
+/** ACL every public object (and pre-signed upload) is written with. */
+const PUBLIC_READ_ACL = 'public-read';
 
 export class S3ObjectStorage implements ObjectStorage {
   private readonly config: StorageConfig;
@@ -42,7 +53,7 @@ export class S3ObjectStorage implements ObjectStorage {
           Body: input.body,
           ContentType: input.contentType,
           CacheControl: input.cacheControl,
-          ACL: 'public-read',
+          ACL: PUBLIC_READ_ACL,
         }),
       );
     } catch (error) {
@@ -51,6 +62,56 @@ export class S3ObjectStorage implements ObjectStorage {
     }
 
     return this.publicUrl(input.key);
+  }
+
+  async presignPut(input: PresignPutInput): Promise<PresignedUpload> {
+    // ACL must be signed so the stored object is public; the client therefore has
+    // to echo `x-amz-acl: public-read` (surfaced in `headers`) or the signature
+    // mismatches. Content-Type is intentionally *not* signed — leaving it
+    // unconstrained keeps the client simple, and `head` validates the result.
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: input.key,
+        ACL: PUBLIC_READ_ACL,
+      });
+      const uploadUrl = await getSignedUrl(this.client, command, {
+        expiresIn: input.expiresInSeconds,
+      });
+      const expiresAt = new Date(
+        Date.now() + input.expiresInSeconds * 1000,
+      ).toISOString();
+      return {
+        uploadUrl,
+        method: 'PUT',
+        headers: { 'x-amz-acl': PUBLIC_READ_ACL },
+        expiresAt,
+      };
+    } catch (error) {
+      console.error('[storage] presign failed', error);
+      throw ApiError.internal('Could not start the upload. Please try again.');
+    }
+  }
+
+  async head(key: string): Promise<ObjectHead | null> {
+    try {
+      const result = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }),
+      );
+      return {
+        contentLength: result.ContentLength ?? 0,
+        contentType: (result.ContentType ?? '').split(';')[0].trim().toLowerCase(),
+      };
+    } catch (error) {
+      // A missing object surfaces as 404 / NotFound — a normal "not uploaded yet"
+      // signal, not a failure. Anything else is a real storage error.
+      const name = (error as { name?: string; $metadata?: { httpStatusCode?: number } });
+      if (name?.name === 'NotFound' || name?.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      console.error('[storage] head failed', error);
+      throw ApiError.internal('Could not verify the uploaded file. Please try again.');
+    }
   }
 
   async remove(key: string): Promise<void> {
