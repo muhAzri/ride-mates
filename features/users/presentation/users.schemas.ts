@@ -40,6 +40,21 @@ export const updateProfileSchema = z
 export type UpdateProfileBody = z.infer<typeof updateProfileSchema>;
 
 /**
+ * POST /users/me/avatar/upload-url — the client declares the image's content type
+ * so the server can pre-validate it before issuing a pre-signed upload URL (UA-4,
+ * R16). Whether the type is *allowed* (WebP/JPEG/PNG) is asserted in the storage
+ * layer (`assertAllowedImageType`); here we only require a non-empty string.
+ */
+export const avatarUploadUrlSchema = z.object({
+  contentType: z
+    .string()
+    .trim()
+    .min(1, 'Provide the image content type, e.g. "image/webp".'),
+});
+
+export type AvatarUploadUrlBody = z.infer<typeof avatarUploadUrlSchema>;
+
+/**
  * PATCH /me/notification-preferences — partial; at least one toggle required so
  * an empty body is a clear 400 rather than a silent no-op (§14).
  */

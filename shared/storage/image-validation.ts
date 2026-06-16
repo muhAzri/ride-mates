@@ -21,6 +21,52 @@ export interface UploadedImage {
   size: number;
 }
 
+/** Just the metadata of an image — no bytes. Used to validate pre-signed uploads. */
+export interface ImageMeta {
+  contentType: string;
+  size: number;
+}
+
+/**
+ * Normalise + assert a declared content type is one we accept. For the pre-signed
+ * flow this guards the *request* for an upload URL (before any bytes exist), so it
+ * checks the type only — size is enforced later, after upload, via `head`.
+ */
+export function assertAllowedImageType(contentType: string): AllowedImageType {
+  const type = contentType.split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.includes(type as AllowedImageType)) {
+    throw ApiError.unprocessable('Unsupported image type.', {
+      contentType: 'Upload a WebP, JPEG or PNG image.',
+    });
+  }
+  return type as AllowedImageType;
+}
+
+/**
+ * Validate an avatar from object metadata alone (size + type), e.g. after a
+ * client uploaded straight to the bucket via a pre-signed URL. Mirrors
+ * `assertValidAvatar` but without needing the bytes in memory.
+ */
+export function assertValidAvatarMeta(meta: ImageMeta): AllowedImageType {
+  return assertValidImageMeta(meta, AVATAR_MAX_BYTES, 'Avatar must be 5 MB or smaller.');
+}
+
+function assertValidImageMeta(
+  meta: ImageMeta,
+  maxBytes: number,
+  tooLarge: string,
+): AllowedImageType {
+  if (meta.size === 0) {
+    throw ApiError.unprocessable('The uploaded file is empty.', {
+      file: 'Choose an image to upload.',
+    });
+  }
+  if (meta.size > maxBytes) {
+    throw ApiError.unprocessable('Image is too large.', { file: tooLarge });
+  }
+  return assertAllowedImageType(meta.contentType);
+}
+
 /**
  * Validate an uploaded image against a size cap and the allowed type list,
  * returning the normalised content type. Failures map to 422 (the bytes are
