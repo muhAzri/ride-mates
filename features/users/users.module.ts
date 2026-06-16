@@ -9,7 +9,8 @@ import { SupabaseUsersRepository } from './infrastructure/supabase-users.reposit
 import { GetMeUseCase } from './application/get-me.usecase';
 import { UpdateProfileUseCase } from './application/update-profile.usecase';
 import { GetPublicProfileUseCase } from './application/get-public-profile.usecase';
-import { SetAvatarUseCase } from './application/set-avatar.usecase';
+import { IssueAvatarUploadUrlUseCase } from './application/issue-avatar-upload-url.usecase';
+import { CommitAvatarUseCase } from './application/commit-avatar.usecase';
 import { RemoveAvatarUseCase } from './application/remove-avatar.usecase';
 import { GetNotificationPreferencesUseCase } from './application/get-notification-preferences.usecase';
 import { UpdateNotificationPreferencesUseCase } from './application/update-notification-preferences.usecase';
@@ -22,7 +23,8 @@ export const usersController = new UsersController({
   getMe: new GetMeUseCase(repository),
   updateProfile: new UpdateProfileUseCase(repository),
   getPublicProfile: new GetPublicProfileUseCase(repository),
-  setAvatar: new SetAvatarUseCase(repository, storage),
+  issueAvatarUploadUrl: new IssueAvatarUploadUrlUseCase(repository, storage),
+  commitAvatar: new CommitAvatarUseCase(repository, storage),
   removeAvatar: new RemoveAvatarUseCase(repository, storage),
   getNotificationPreferences: new GetNotificationPreferencesUseCase(repository),
   updateNotificationPreferences: new UpdateNotificationPreferencesUseCase(repository),

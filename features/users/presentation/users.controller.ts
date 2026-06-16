@@ -7,22 +7,27 @@ import type { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, json, noContent } from '@/shared/http/responses';
 import { ApiError } from '@/shared/http/api-error';
 import { parseInput, readJsonBody } from '@/shared/validation/validate';
-import { readUploadedFile } from '@/shared/http/form-data';
 import type { GetMeUseCase } from '../application/get-me.usecase';
 import type { UpdateProfileUseCase } from '../application/update-profile.usecase';
 import type { GetPublicProfileUseCase } from '../application/get-public-profile.usecase';
-import type { SetAvatarUseCase } from '../application/set-avatar.usecase';
+import type { IssueAvatarUploadUrlUseCase } from '../application/issue-avatar-upload-url.usecase';
+import type { CommitAvatarUseCase } from '../application/commit-avatar.usecase';
 import type { RemoveAvatarUseCase } from '../application/remove-avatar.usecase';
 import type { GetNotificationPreferencesUseCase } from '../application/get-notification-preferences.usecase';
 import type { UpdateNotificationPreferencesUseCase } from '../application/update-notification-preferences.usecase';
-import { updateNotificationPreferencesSchema, updateProfileSchema } from './users.schemas';
+import {
+  avatarUploadUrlSchema,
+  updateNotificationPreferencesSchema,
+  updateProfileSchema,
+} from './users.schemas';
 import { toNotificationPreferencesDto, toPublicUserDto, toSelfUserDto } from './users.mapper';
 
 export interface UsersUseCases {
   getMe: GetMeUseCase;
   updateProfile: UpdateProfileUseCase;
   getPublicProfile: GetPublicProfileUseCase;
-  setAvatar: SetAvatarUseCase;
+  issueAvatarUploadUrl: IssueAvatarUploadUrlUseCase;
+  commitAvatar: CommitAvatarUseCase;
   removeAvatar: RemoveAvatarUseCase;
   getNotificationPreferences: GetNotificationPreferencesUseCase;
   updateNotificationPreferences: UpdateNotificationPreferencesUseCase;
@@ -46,11 +51,24 @@ export class UsersController {
     return json(toSelfUserDto(user), 200);
   }
 
-  /** POST /users/me/avatar (UA-4). multipart/form-data, field `file`. */
-  async setAvatar(request: NextRequest): Promise<NextResponse> {
+  /**
+   * POST /users/me/avatar/upload-url (UA-4, step 1). Issue a pre-signed PUT so the
+   * client uploads the avatar straight to object storage (R16). Body: `{ contentType }`.
+   */
+  async issueAvatarUploadUrl(request: NextRequest): Promise<NextResponse> {
     const accessToken = this.requireToken(request);
-    const image = await readUploadedFile(request, 'file');
-    const { avatarUrl } = await this.useCases.setAvatar.execute(accessToken, image);
+    const { contentType } = parseInput(avatarUploadUrlSchema, await readJsonBody(request));
+    const result = await this.useCases.issueAvatarUploadUrl.execute(accessToken, contentType);
+    return json(result, 200);
+  }
+
+  /**
+   * PUT /users/me/avatar (UA-4, step 2). Confirm the pre-signed upload: validate the
+   * stored object's metadata and record the URL. No request body.
+   */
+  async commitAvatar(request: NextRequest): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const { avatarUrl } = await this.useCases.commitAvatar.execute(accessToken);
     return json({ avatarUrl }, 200);
   }
 
