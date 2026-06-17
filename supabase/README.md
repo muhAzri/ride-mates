@@ -85,28 +85,45 @@ The DB stores **URLs only** — files live in an external S3-compatible bucket
 after the client uploads. `width`/`height` on photos are optional layout hints.
 No Supabase Storage buckets are required by these migrations.
 
-The upload path lives in the web/backend app, not in these migrations:
+The upload path lives in the web/backend app, not in these migrations. **All
+uploads are pre-signed / direct-to-storage** — the image bytes never pass through
+the API server (bandwidth-thrift on Vercel; API_CONTRACT.md R16/R17):
 
-- Service: `ride-mates/shared/storage/` — a generic `ObjectStorage` port with a
-  hand-rolled SigV4 S3 adapter (`fetch` + `crypto`, no AWS SDK). Configure via
-  the `S3_*` vars in `.env.example`.
-- Every object is uploaded **`public-read`**, so the returned URL is directly
-  fetchable by web/mobile clients without a presign step.
+- Service: `ride-mates/shared/storage/` — a generic `ObjectStorage` port and an
+  S3 adapter built on `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`,
+  pointed at the IDCloudHost endpoint (path-style). Configure via the `S3_*` vars.
 - The frontend compresses & converts images to **WebP** before upload; the API
-  re-validates type (WebP/JPEG/PNG) and size (avatar ≤5 MB) defensively.
-- **Avatar foldering is storage-thrifty (UA-4).** Each user has a single,
-  deterministic, extension-less key `avatars/{userId}`. Changing an avatar
-  **overwrites** that object, so old images never accumulate as orphans. Because
-  the URL is otherwise stable, the API appends a cache-busting `?v=<ts>` token
-  (stored in `profiles.avatar_url`) so CDNs/clients pick up the new image.
+  re-validates type (WebP/JPEG/PNG) and size on commit via a metadata `HEAD`
+  (avatar/screenshot ≤5 MB, listing photo ≤8 MB) — never by reading the bytes.
+- **Avatar (UA-4 / R16) — final-key, overwrite.** `POST /users/me/avatar/upload-url`
+  issues a pre-signed PUT to the single deterministic key `avatars/{userId}`; the
+  client uploads directly, then `PUT /users/me/avatar` confirms (HEAD-validates,
+  stamps a cache-busting `?v=<ts>` into `profiles.avatar_url`). Overwriting the
+  stable key means old images never accumulate, so no cleanup is needed.
   `DELETE /users/me/avatar` removes the object and sets `avatar_url = null`.
-- **Listing photos upload inline (R12 / §6).** `POST`/`PATCH /listings` are
-  `multipart/form-data`: the route handler stores each `photos` file under
-  `listings/{userId}/{uuid}` (public-read) and passes the resulting URLs to
-  `create_listing` (as `jsonb`), which inserts `listing_photos` rows atomically
-  with the listing. Edits reconcile photos with owner-scoped delete/insert and
-  remove the dropped objects from the bucket — so there is no staging table and
-  no orphaned media. Max **3** photos per listing.
+- **Listing photos (MP-1 / R17) & feedback screenshot (FB-2 / R17) — staging then
+  promote.** Their keys are random (`listings/{userId}/{uuid}`,
+  `feedback/{userId}/{uuid}`), so they can't use the overwrite trick. The client
+  first PUTs to a **private staging key** under `_staging/` (via
+  `POST /listings/photo-upload-urls` / `POST /feedback/screenshot-upload-url`),
+  then sends the refs on `POST`/`PATCH /listings` / `POST /feedback`. On commit the
+  server HEAD-validates each staged object and **promotes** it (server-side `copy`,
+  bytes stay store-internal) to its public final key, deleting the staging copy;
+  rows are inserted atomically (e.g. `create_listing` as `jsonb`), and promoted
+  objects are cleaned up on failure. Edits reconcile photos with owner-scoped
+  delete/insert and remove dropped objects. Max **3** photos per listing.
+
+### Required bucket lifecycle rule (R17)
+
+Abandoned/invalid staging uploads are swept by an **S3 lifecycle expiration rule**
+on the bucket — set this once in the IDCloudHost console (or via S3 API):
+
+- **Scope:** objects whose key matches the prefix `_staging/` is **not** enough on
+  its own (staging lives at `listings/_staging/…` and `feedback/_staging/…`). Add
+  two prefix rules — `listings/_staging/` and `feedback/_staging/` — or a single
+  rule per top-level prefix, each **Expire current version after 1 day**.
+- Committed media lives outside `_staging/`, so it is never touched by the rule.
+- This is the only orphan-cleanup mechanism — no cron/job is required.
 
 ## RLS summary
 
