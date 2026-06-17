@@ -9,7 +9,14 @@ export type {
   PresignPutInput,
   PresignedUpload,
   ObjectHead,
+  CopyObjectInput,
 } from './object-storage';
+export {
+  STAGING_SEGMENT,
+  isUploadRef,
+  commitStagedImage,
+  type CommitStagedImageInput,
+} from './staging';
 
 let instance: ObjectStorage | null = null;
 
@@ -20,16 +27,15 @@ export function getObjectStorage(): ObjectStorage {
   return instance;
 }
 
-export type { ObjectStorage, PutObjectInput } from './object-storage';
+export type { ObjectStorage } from './object-storage';
 export {
-  assertValidAvatar,
   assertValidAvatarMeta,
+  assertValidListingPhotoMeta,
+  assertValidScreenshotMeta,
   assertAllowedImageType,
-  assertValidListingPhoto,
-  assertValidScreenshot,
   ALLOWED_IMAGE_TYPES,
   AVATAR_MAX_BYTES,
   LISTING_PHOTO_MAX_BYTES,
-  type UploadedImage,
   type ImageMeta,
+  type AllowedImageType,
 } from './image-validation';

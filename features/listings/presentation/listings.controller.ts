@@ -1,23 +1,17 @@
 /**
  * HTTP boundary for the Listings feature (API_CONTRACT.md §6, §7). Maps requests
  * to use-cases and results to responses — no business logic, no data access.
- * Create/edit are multipart (photos inline); this layer pulls the text fields and
- * file parts out of the form and hands them to the use-cases.
+ * Create/edit are `application/json`: photos upload pre-signed (R17), so the body
+ * carries `photoRefs` instead of file parts.
  */
 import type { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, json, noContent } from '@/shared/http/responses';
 import { ApiError } from '@/shared/http/api-error';
-import { parseInput } from '@/shared/validation/validate';
+import { parseInput, readJsonBody } from '@/shared/validation/validate';
 import { decodeCursor } from '@/shared/http/pagination';
-import {
-  getFileParts,
-  getOptionalTextField,
-  getTextValues,
-  hasField,
-  readMultipart,
-} from '@/shared/http/form-data';
 import type { BrowseListingsUseCase } from '../application/browse-listings.usecase';
 import type { CreateListingUseCase } from '../application/create-listing.usecase';
+import type { IssuePhotoUploadUrlsUseCase } from '../application/issue-photo-upload-urls.usecase';
 import type { GetListingUseCase } from '../application/get-listing.usecase';
 import type { UpdateListingUseCase } from '../application/update-listing.usecase';
 import type { DeleteListingUseCase } from '../application/delete-listing.usecase';
@@ -25,9 +19,10 @@ import type { ListOwnerListingsUseCase } from '../application/list-owner-listing
 import type { SavedListingsUseCase } from '../application/saved-listings.usecase';
 import {
   browseQuerySchema,
-  createListingFieldsSchema,
+  createListingSchema,
+  photoUploadUrlsSchema,
   savedQuerySchema,
-  updateListingFieldsSchema,
+  updateListingSchema,
 } from './listings.schemas';
 import type { BrowseQuery, UpdateListingFields } from '../domain/listing.types';
 import { toListingCardDto, toListingDto } from './listings.mapper';
@@ -35,14 +30,13 @@ import { toListingCardDto, toListingDto } from './listings.mapper';
 export interface ListingsUseCases {
   browse: BrowseListingsUseCase;
   create: CreateListingUseCase;
+  issuePhotoUploadUrls: IssuePhotoUploadUrlsUseCase;
   getOne: GetListingUseCase;
   update: UpdateListingUseCase;
   remove: DeleteListingUseCase;
   ownerListings: ListOwnerListingsUseCase;
   saved: SavedListingsUseCase;
 }
-
-const TEXT_FIELDS = ['title', 'description', 'priceIdr', 'category', 'condition', 'status'] as const;
 
 export class ListingsController {
   constructor(private readonly useCases: ListingsUseCases) {}
@@ -74,38 +68,45 @@ export class ListingsController {
     return json({ data: page.data.map(toListingCardDto), page: page.page }, 200);
   }
 
-  /** POST /listings (MP-1). multipart/form-data: fields + `photos` files. */
+  /** POST /listings/photo-upload-urls (MP-1 / R17). Issue pre-signed photo PUTs. */
+  async issuePhotoUploadUrls(request: NextRequest): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const { contentTypes } = parseInput(photoUploadUrlsSchema, await readJsonBody(request));
+    const result = await this.useCases.issuePhotoUploadUrls.execute(accessToken, contentTypes);
+    return json(result, 200);
+  }
+
+  /** POST /listings (MP-1). JSON: fields + `photoRefs` (pre-signed uploads). */
   async create(request: NextRequest): Promise<NextResponse> {
     const accessToken = this.requireToken(request);
-    const form = await readMultipart(request);
+    const { photoRefs, ...fields } = parseInput(createListingSchema, await readJsonBody(request));
 
-    const fields = parseInput(createListingFieldsSchema, collectTextFields(form));
-    const photos = await getFileParts(form, 'photos');
-
-    const listing = await this.useCases.create.execute(accessToken, { ...fields, photos });
+    const listing = await this.useCases.create.execute(accessToken, { ...fields, photoRefs });
     return json(toListingDto(listing), 201);
   }
 
-  /** PATCH /listings/{id} (MP-2, MP-8). multipart/form-data: fields + photo reconcile. */
+  /** PATCH /listings/{id} (MP-2, MP-8). JSON: fields + photo reconcile via refs. */
   async update(request: NextRequest, listingId: string): Promise<NextResponse> {
     const accessToken = this.requireToken(request);
-    const form = await readMultipart(request);
+    const { keepPhotoIds, photoRefs, ...fields } = parseInput(
+      updateListingSchema,
+      await readJsonBody(request),
+    );
 
-    const fields = parseInput(
-      updateListingFieldsSchema,
-      collectTextFields(form),
-    ) as UpdateListingFields;
-
-    const keepProvided = hasField(form, 'keepPhotoIds');
-    const newFiles = await getFileParts(form, 'photos');
+    const newRefs = photoRefs ?? [];
     const photos = {
-      touched: keepProvided || newFiles.length > 0,
-      keepProvided,
-      keepIds: getTextValues(form, 'keepPhotoIds'),
-      newFiles,
+      touched: keepPhotoIds !== undefined || newRefs.length > 0,
+      keepProvided: keepPhotoIds !== undefined,
+      keepIds: keepPhotoIds ?? [],
+      newRefs,
     };
 
-    const listing = await this.useCases.update.execute(accessToken, listingId, fields, photos);
+    const listing = await this.useCases.update.execute(
+      accessToken,
+      listingId,
+      fields as UpdateListingFields,
+      photos,
+    );
     return json(toListingDto(listing), 200);
   }
 
@@ -167,18 +168,4 @@ export class ListingsController {
     }
     return accessToken;
   }
-}
-
-/**
- * Pull the present listing text fields out of a form into a plain object. Absent
- * fields are omitted (not set to null) so the schema's required/optional rules
- * behave exactly as they would for a JSON body.
- */
-function collectTextFields(form: FormData): Record<string, string> {
-  const input: Record<string, string> = {};
-  for (const field of TEXT_FIELDS) {
-    const value = getOptionalTextField(form, field);
-    if (value !== null) input[field] = value;
-  }
-  return input;
 }

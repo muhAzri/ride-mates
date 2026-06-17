@@ -8,20 +8,29 @@
  * listing photos, and feedback screenshots alike.
  */
 
-export interface PutObjectInput {
-  /** Full object key, e.g. `avatars/usr_01J...`. */
-  key: string;
-  body: Buffer;
-  contentType: string;
-  /** Cache-Control header to store on the object. */
-  cacheControl?: string;
-}
-
 export interface PresignPutInput {
   /** Full object key the client will upload to, e.g. `avatars/usr_01J...`. */
   key: string;
   /** Seconds the signed URL stays valid. Keep short — it's a one-shot upload. */
   expiresInSeconds: number;
+  /**
+   * Whether the uploaded object is served `public-read`. Default `true` (e.g.
+   * avatars, uploaded straight to their final public key). Set `false` for
+   * staging uploads that are private until a `copy` promotes them to a public
+   * final key — keeps the client simple (no signed ACL header to echo).
+   */
+  public?: boolean;
+}
+
+export interface CopyObjectInput {
+  /** Source object key (e.g. a staging key). */
+  fromKey: string;
+  /** Destination object key (the permanent, public key). */
+  toKey: string;
+  /** Content-Type to store on the destination (replaces the source's). */
+  contentType: string;
+  /** Cache-Control header to store on the destination. */
+  cacheControl?: string;
 }
 
 export interface PresignedUpload {
@@ -47,17 +56,11 @@ export interface ObjectHead {
 
 export interface ObjectStorage {
   /**
-   * Upload (overwrite) an object, served `public-read`. Returns the public URL.
-   * Overwriting reuses the same key, so a per-user key never accumulates orphans.
-   */
-  put(input: PutObjectInput): Promise<string>;
-
-  /**
    * Issue a pre-signed PUT so the client uploads bytes **directly** to the store,
    * keeping large payloads off the API server (bandwidth-thrift — matters on
-   * metered hosts like Vercel). The object is signed `public-read`; the caller is
-   * responsible for validating the result afterwards via `head` (size/type can't
-   * be enforced at signing time). Overwrites the key, like `put`.
+   * metered hosts like Vercel). Public uploads are signed `public-read`; the
+   * caller validates the result afterwards via `head` (size/type can't be
+   * enforced at signing time). Overwrites the key.
    */
   presignPut(input: PresignPutInput): Promise<PresignedUpload>;
 
@@ -67,6 +70,14 @@ export interface ObjectStorage {
    * upload after the fact, cheaply (no bytes flow through the server).
    */
   head(key: string): Promise<ObjectHead | null>;
+
+  /**
+   * Server-side copy within the store (e.g. promote a private staging upload to a
+   * public final key). The bytes move store-internally — they never transit the
+   * API server — and the destination is written `public-read`. Returns the
+   * destination's public URL.
+   */
+  copy(input: CopyObjectInput): Promise<string>;
 
   /** Delete an object. Idempotent: a missing key is treated as success. */
   remove(key: string): Promise<void>;

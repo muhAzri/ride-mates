@@ -1,18 +1,22 @@
 /**
- * POST /listings (MP-1) — create a listing with its photos in one request. The
- * photo files arrive inline (multipart); this use-case validates and uploads them
- * to object storage, then persists the listing + photo URLs atomically via the
- * repository. If persistence fails, the just-uploaded objects are cleaned up so no
- * orphans are left (the single-endpoint guarantee). The listing inherits the
- * seller's pinned location server-side (FSD §7.2) — no coordinates are sent.
+ * POST /listings (MP-1) — create a listing with its photos. Photos are uploaded
+ * pre-signed (R17): the client sends `photoRefs` for objects it already PUT to
+ * staging, and this use-case validates + promotes each to its final public key,
+ * then persists the listing + photo URLs atomically. If persistence fails, the
+ * promoted objects are cleaned up so no orphans are left. The listing inherits
+ * the seller's pinned location server-side (FSD §7.2) — no coordinates are sent.
  */
 import { ApiError } from '@/shared/http/api-error';
-import type { ObjectStorage, UploadedImage } from '@/shared/storage';
-import { assertValidListingPhoto } from '@/shared/storage';
+import type { ObjectStorage } from '@/shared/storage';
+import {
+  assertValidListingPhotoMeta,
+  commitStagedImage,
+  isUploadRef,
+} from '@/shared/storage';
 import type { ListingsRepository } from '../domain/listings.repository';
 import type { Listing, ListingPhotoInput } from '../domain/listing.types';
 import { MAX_LISTING_PHOTOS } from '../domain/listing.constants';
-import { listingPhotoKey } from '../domain/photo-key';
+import { listingPhotoKey, listingPhotoStagingKey } from '../domain/photo-key';
 
 const PHOTO_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
@@ -22,7 +26,7 @@ export interface CreateListingInput {
   priceIdr: number;
   category: Listing['category'];
   condition: Listing['condition'];
-  photos: UploadedImage[];
+  photoRefs: string[];
 }
 
 export class CreateListingUseCase {
@@ -32,10 +36,10 @@ export class CreateListingUseCase {
   ) {}
 
   async execute(accessToken: string, input: CreateListingInput): Promise<Listing> {
-    assertPhotoCount(input.photos.length);
+    assertPhotoCount(input.photoRefs.length);
     const { id: userId } = await this.repo.getViewer(accessToken);
 
-    const uploaded = await uploadAll(this.storage, userId, input.photos);
+    const uploaded = await commitPhotos(this.storage, userId, input.photoRefs);
 
     try {
       return await this.repo.create(accessToken, {
@@ -65,33 +69,41 @@ export function assertPhotoCount(count: number): void {
   }
 }
 
-/** Validate + upload each image; returns the persisted photo descriptors in order. */
-export async function uploadAll(
+/**
+ * Validate + promote each staged upload (by ref) to its final public key; returns
+ * the persisted photo descriptors in order. A bad ref or a missing/invalid staged
+ * object is rejected, and any earlier promoted objects are cleaned up first.
+ */
+export async function commitPhotos(
   storage: ObjectStorage,
   userId: string,
-  images: UploadedImage[],
+  refs: string[],
 ): Promise<ListingPhotoInput[]> {
   const uploaded: ListingPhotoInput[] = [];
   try {
-    for (const image of images) {
-      const contentType = assertValidListingPhoto(image);
-      const url = await storage.put({
-        key: listingPhotoKey(userId),
-        body: image.body,
-        contentType,
+    for (const ref of refs) {
+      if (!isUploadRef(ref)) {
+        throw ApiError.unprocessable('A photo upload reference is invalid.', {
+          photos: 'Re-upload the photo and try again.',
+        });
+      }
+      const url = await commitStagedImage(storage, {
+        stagingKey: listingPhotoStagingKey(userId, ref),
+        finalKey: listingPhotoKey(userId),
+        validate: assertValidListingPhotoMeta,
         cacheControl: PHOTO_CACHE_CONTROL,
       });
       uploaded.push({ url, width: null, height: null });
     }
     return uploaded;
   } catch (error) {
-    // One bad image shouldn't leave the earlier ones orphaned.
+    // One bad photo shouldn't leave the earlier ones orphaned.
     await cleanup(storage, uploaded);
     throw error;
   }
 }
 
-/** Best-effort removal of uploaded objects (cleanup path — never masks the cause). */
+/** Best-effort removal of promoted objects (cleanup path — never masks the cause). */
 export async function cleanup(storage: ObjectStorage, photos: ListingPhotoInput[]): Promise<void> {
   await Promise.all(
     photos.map((p) =>

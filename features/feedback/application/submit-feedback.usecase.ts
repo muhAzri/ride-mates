@@ -1,14 +1,16 @@
 /**
- * POST /feedback (FB-2) — unified bug/idea/other form. If a screenshot is
- * attached it is validated and uploaded to object storage first, then the
- * submission (with the screenshot URL) is persisted. App diagnostics are kept
- * only when the user opted in (`includeAppInfo`).
+ * POST /feedback (FB-2) — unified bug/idea/other form. If a screenshot was
+ * uploaded pre-signed (R17), its `ref` is validated and the staged object is
+ * promoted to a final public key before the submission (with the screenshot URL)
+ * is persisted. App diagnostics are kept only when the user opted in
+ * (`includeAppInfo`).
  */
-import type { ObjectStorage, UploadedImage } from '@/shared/storage';
-import { assertValidScreenshot } from '@/shared/storage';
+import { ApiError } from '@/shared/http/api-error';
+import type { ObjectStorage } from '@/shared/storage';
+import { assertValidScreenshotMeta, commitStagedImage, isUploadRef } from '@/shared/storage';
 import type { FeedbackRepository } from '../domain/feedback.repository';
 import type { AppInfo, FeedbackReceipt, FeedbackType } from '../domain/feedback.types';
-import { screenshotKey } from '../domain/screenshot-key';
+import { screenshotKey, screenshotStagingKey } from '../domain/screenshot-key';
 
 const SCREENSHOT_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const EMPTY_APP_INFO: AppInfo = {
@@ -34,16 +36,20 @@ export class SubmitFeedbackUseCase {
   async execute(
     accessToken: string,
     input: SubmitFeedbackInput,
-    screenshot: UploadedImage | undefined,
+    screenshotRef: string | undefined,
   ): Promise<FeedbackReceipt> {
     let screenshotUrl: string | null = null;
-    if (screenshot) {
-      const contentType = assertValidScreenshot(screenshot);
+    if (screenshotRef) {
+      if (!isUploadRef(screenshotRef)) {
+        throw ApiError.unprocessable('The screenshot upload reference is invalid.', {
+          screenshotRef: 'Re-upload the screenshot and try again.',
+        });
+      }
       const userId = await this.repo.getUserId(accessToken);
-      screenshotUrl = await this.storage.put({
-        key: screenshotKey(userId),
-        body: screenshot.body,
-        contentType,
+      screenshotUrl = await commitStagedImage(this.storage, {
+        stagingKey: screenshotStagingKey(userId, screenshotRef),
+        finalKey: screenshotKey(userId),
+        validate: assertValidScreenshotMeta,
         cacheControl: SCREENSHOT_CACHE_CONTROL,
       });
     }
