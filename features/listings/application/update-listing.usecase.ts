@@ -10,21 +10,21 @@
  * left untouched.
  */
 import { ApiError } from '@/shared/http/api-error';
-import type { ObjectStorage, UploadedImage } from '@/shared/storage';
+import type { ObjectStorage } from '@/shared/storage';
 import type { ListingsRepository } from '../domain/listings.repository';
 import type { Listing, UpdateListingFields } from '../domain/listing.types';
-import { assertPhotoCount, cleanup, uploadAll } from './create-listing.usecase';
+import { assertPhotoCount, cleanup, commitPhotos } from './create-listing.usecase';
 
 /** What the client expressed about photos in a PATCH (parsed by the controller). */
 export interface PhotoEditIntent {
-  /** True when `keepPhotoIds` and/or new `photos` were present (i.e. reconcile). */
+  /** True when `keepPhotoIds` and/or new `photoRefs` were present (i.e. reconcile). */
   touched: boolean;
   /** True when the `keepPhotoIds` part was sent at all (even empty). */
   keepProvided: boolean;
   /** Ids of existing photos to retain. */
   keepIds: string[];
-  /** New image files to add. */
-  newFiles: UploadedImage[];
+  /** Refs of newly pre-signed-uploaded photos to add (R17). */
+  newRefs: string[];
 }
 
 export class UpdateListingUseCase {
@@ -94,9 +94,9 @@ export class UpdateListingUseCase {
     const kept = current.filter((p) => keepSet.has(p.id));
     const toDelete = current.filter((p) => !keepSet.has(p.id));
 
-    assertPhotoCount(kept.length + photos.newFiles.length);
+    assertPhotoCount(kept.length + photos.newRefs.length);
 
-    const uploaded = await uploadAll(this.storage, userId, photos.newFiles);
+    const uploaded = await commitPhotos(this.storage, userId, photos.newRefs);
     const startPosition = kept.length > 0 ? Math.max(...kept.map((p) => p.position)) + 1 : 0;
 
     try {
