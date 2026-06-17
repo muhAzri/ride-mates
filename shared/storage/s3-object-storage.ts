@@ -12,15 +12,16 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ApiError } from '@/shared/http/api-error';
 import type {
+  CopyObjectInput,
   ObjectHead,
   ObjectStorage,
   PresignPutInput,
   PresignedUpload,
-  PutObjectInput,
 } from './object-storage';
 import { getStorageConfig, type StorageConfig } from './storage.config';
 
@@ -44,36 +45,19 @@ export class S3ObjectStorage implements ObjectStorage {
     });
   }
 
-  async put(input: PutObjectInput): Promise<string> {
-    try {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: this.config.bucket,
-          Key: input.key,
-          Body: input.body,
-          ContentType: input.contentType,
-          CacheControl: input.cacheControl,
-          ACL: PUBLIC_READ_ACL,
-        }),
-      );
-    } catch (error) {
-      console.error('[storage] put failed', error);
-      throw ApiError.internal('Could not store the uploaded file. Please try again.');
-    }
-
-    return this.publicUrl(input.key);
-  }
-
   async presignPut(input: PresignPutInput): Promise<PresignedUpload> {
-    // ACL must be signed so the stored object is public; the client therefore has
-    // to echo `x-amz-acl: public-read` (surfaced in `headers`) or the signature
-    // mismatches. Content-Type is intentionally *not* signed — leaving it
-    // unconstrained keeps the client simple, and `head` validates the result.
+    // Public uploads (default) sign `public-read` ACL, so the client must echo
+    // `x-amz-acl: public-read` (surfaced in `headers`) or the signature mismatches.
+    // Staging uploads (`public: false`) stay private — no ACL is signed, so the
+    // client sends no extra header; a later `copy` makes the final key public.
+    // Content-Type is intentionally *not* signed — leaving it unconstrained keeps
+    // the client simple, and `head` validates the result before it's used.
+    const isPublic = input.public ?? true;
     try {
       const command = new PutObjectCommand({
         Bucket: this.config.bucket,
         Key: input.key,
-        ACL: PUBLIC_READ_ACL,
+        ...(isPublic ? { ACL: PUBLIC_READ_ACL } : {}),
       });
       const uploadUrl = await getSignedUrl(this.client, command, {
         expiresIn: input.expiresInSeconds,
@@ -84,13 +68,36 @@ export class S3ObjectStorage implements ObjectStorage {
       return {
         uploadUrl,
         method: 'PUT',
-        headers: { 'x-amz-acl': PUBLIC_READ_ACL },
+        headers: isPublic ? { 'x-amz-acl': PUBLIC_READ_ACL } : {},
         expiresAt,
       };
     } catch (error) {
       console.error('[storage] presign failed', error);
       throw ApiError.internal('Could not start the upload. Please try again.');
     }
+  }
+
+  async copy(input: CopyObjectInput): Promise<string> {
+    try {
+      await this.client.send(
+        new CopyObjectCommand({
+          Bucket: this.config.bucket,
+          // CopySource must be URL-encoded and include the bucket.
+          CopySource: encodeURI(`${this.config.bucket}/${input.fromKey}`),
+          Key: input.toKey,
+          ACL: PUBLIC_READ_ACL,
+          // REPLACE so the destination gets our content-type/cache-control rather
+          // than inheriting the (private, unconstrained) staging object's.
+          MetadataDirective: 'REPLACE',
+          ContentType: input.contentType,
+          CacheControl: input.cacheControl,
+        }),
+      );
+    } catch (error) {
+      console.error('[storage] copy failed', error);
+      throw ApiError.internal('Could not finalise the uploaded file. Please try again.');
+    }
+    return this.publicUrl(input.toKey);
   }
 
   async head(key: string): Promise<ObjectHead | null> {
