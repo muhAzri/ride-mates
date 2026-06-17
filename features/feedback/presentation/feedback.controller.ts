@@ -1,22 +1,22 @@
 /**
- * HTTP boundary for the Feedback feature (API_CONTRACT.md §13, §12.5). The
- * feedback form accepts multipart (with a screenshot) or JSON (without); this
- * controller normalises both into the validated shape. No business logic here.
+ * HTTP boundary for the Feedback feature (API_CONTRACT.md §13, §12.5). POST
+ * /feedback is `application/json`: an optional screenshot uploads pre-signed
+ * (R17), so the body carries a `screenshotRef`. No business logic here.
  */
 import type { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, json } from '@/shared/http/responses';
 import { ApiError } from '@/shared/http/api-error';
 import { parseInput, readJsonBody } from '@/shared/validation/validate';
 import { decodeCursor } from '@/shared/http/pagination';
-import { getFileParts, getOptionalTextField, readMultipart } from '@/shared/http/form-data';
-import type { UploadedImage } from '@/shared/storage';
 import type { SubmitFeedbackUseCase } from '../application/submit-feedback.usecase';
+import type { IssueScreenshotUploadUrlUseCase } from '../application/issue-screenshot-upload-url.usecase';
 import type { FeatureRequestsUseCase } from '../application/feature-requests.usecase';
 import type { GetChangelogUseCase } from '../application/get-changelog.usecase';
 import {
   createFeatureRequestSchema,
   featureRequestQuerySchema,
   feedbackSchema,
+  screenshotUploadUrlSchema,
 } from './feedback.schemas';
 import {
   toChangelogEntryDto,
@@ -27,37 +27,27 @@ import {
 
 export interface FeedbackUseCases {
   submitFeedback: SubmitFeedbackUseCase;
+  issueScreenshotUploadUrl: IssueScreenshotUploadUrlUseCase;
   featureRequests: FeatureRequestsUseCase;
   changelog: GetChangelogUseCase;
 }
 
-const FEEDBACK_TEXT_FIELDS = ['type', 'message', 'appVersion', 'platform', 'osVersion', 'deviceModel'] as const;
-
 export class FeedbackController {
   constructor(private readonly useCases: FeedbackUseCases) {}
 
-  /** POST /feedback (FB-2) — multipart (with screenshot) or JSON. */
+  /** POST /feedback/screenshot-upload-url (FB-2 / R17). Issue a pre-signed PUT. */
+  async issueScreenshotUploadUrl(request: NextRequest): Promise<NextResponse> {
+    const accessToken = this.requireToken(request);
+    const { contentType } = parseInput(screenshotUploadUrlSchema, await readJsonBody(request));
+    const result = await this.useCases.issueScreenshotUploadUrl.execute(accessToken, contentType);
+    return json(result, 200);
+  }
+
+  /** POST /feedback (FB-2) — JSON; optional `screenshotRef` from a pre-signed upload. */
   async submit(request: NextRequest): Promise<NextResponse> {
     const accessToken = this.requireToken(request);
+    const body = parseInput(feedbackSchema, await readJsonBody(request));
 
-    let raw: unknown;
-    let screenshot: UploadedImage | undefined;
-
-    if ((request.headers.get('content-type') ?? '').includes('multipart/form-data')) {
-      const form = await readMultipart(request);
-      const input: Record<string, unknown> = {};
-      for (const field of FEEDBACK_TEXT_FIELDS) {
-        const value = getOptionalTextField(form, field);
-        if (value !== null) input[field] = value;
-      }
-      input.includeAppInfo = getOptionalTextField(form, 'includeAppInfo') === 'true';
-      raw = input;
-      screenshot = (await getFileParts(form, 'screenshot'))[0];
-    } else {
-      raw = await readJsonBody(request);
-    }
-
-    const body = parseInput(feedbackSchema, raw);
     const receipt = await this.useCases.submitFeedback.execute(
       accessToken,
       {
@@ -71,7 +61,7 @@ export class FeedbackController {
           deviceModel: body.deviceModel ?? null,
         },
       },
-      screenshot,
+      body.screenshotRef,
     );
     return json(toFeedbackReceiptDto(receipt), 201);
   }

@@ -1,7 +1,8 @@
 /**
  * Request-shape validation (zod) for feedback / feature requests (API_CONTRACT.md
- * §13). Shape only → 400. The feedback form may arrive as multipart (with a
- * screenshot) or JSON; the controller normalises both into `feedbackSchema`.
+ * §13). Shape only → 400. POST /feedback is `application/json`: an optional
+ * screenshot uploads pre-signed (R17), so the body carries a `screenshotRef`
+ * (validated in the use-case) rather than a file part.
  */
 import { z } from 'zod';
 import { normalizeLimit } from '@/shared/http/pagination';
@@ -14,6 +15,16 @@ export const feedbackSchema = z.object({
   platform: z.string().trim().max(50).optional(),
   osVersion: z.string().trim().max(50).optional(),
   deviceModel: z.string().trim().max(100).optional(),
+  /** Ref of a pre-signed-uploaded screenshot to attach (optional). */
+  screenshotRef: z.string().trim().min(1).optional(),
+});
+
+/**
+ * POST /feedback/screenshot-upload-url (FB-2 / R17). The client declares the
+ * screenshot's content type; whether it is allowed is asserted in the use-case.
+ */
+export const screenshotUploadUrlSchema = z.object({
+  contentType: z.string().trim().min(1, 'Provide the image content type, e.g. "image/webp".'),
 });
 
 export const createFeatureRequestSchema = z.object({

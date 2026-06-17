@@ -7,6 +7,7 @@
 import { getObjectStorage } from '@/shared/storage';
 import { SupabaseFeedbackRepository } from './infrastructure/supabase-feedback.repository';
 import { SubmitFeedbackUseCase } from './application/submit-feedback.usecase';
+import { IssueScreenshotUploadUrlUseCase } from './application/issue-screenshot-upload-url.usecase';
 import { FeatureRequestsUseCase } from './application/feature-requests.usecase';
 import { GetChangelogUseCase } from './application/get-changelog.usecase';
 import { FeedbackController } from './presentation/feedback.controller';
@@ -16,6 +17,7 @@ const storage = getObjectStorage();
 
 export const feedbackController = new FeedbackController({
   submitFeedback: new SubmitFeedbackUseCase(repository, storage),
+  issueScreenshotUploadUrl: new IssueScreenshotUploadUrlUseCase(repository, storage),
   featureRequests: new FeatureRequestsUseCase(repository),
   changelog: new GetChangelogUseCase(repository),
 });
